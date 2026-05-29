@@ -245,7 +245,11 @@ export default function App() {
     e.preventDefault();
     if (!inputVal.trim()) return;
     const newId = `food_${Date.now()}`;
-    const newItem = { id: newId, text: inputVal.trim() };
+    const newItem = { 
+      id: newId, 
+      text: inputVal.trim(),
+      addedBy: nickname || 'Anon'
+    };
     const updatedItems = [...items, newItem];
     
     setItems(updatedItems);
@@ -583,6 +587,11 @@ export default function App() {
                       <div className="item-content">
                         <span className="item-number">{index + 1}.</span>
                         <span className="item-text">{item.text}</span>
+                        {item.addedBy && (
+                          <span className="item-added-by">
+                            👤 {item.addedBy}
+                          </span>
+                        )}
                       </div>
                       <div className="item-actions">
                         <button className="action-btn-text edit" onClick={() => handleStartEdit(item)}>edit</button>
@@ -671,6 +680,21 @@ export default function App() {
         .me-tag {
           font-size: 11px;
           opacity: 0.7;
+        }
+        
+        .item-added-by {
+          font-size: 11px;
+          color: var(--text-emerald);
+          background: rgba(16, 185, 129, 0.08);
+          border: 1px solid rgba(16, 185, 129, 0.2);
+          padding: 2px 8px;
+          border-radius: 999px;
+          margin-left: 10px;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-weight: 600;
+          vertical-align: middle;
         }
       `}</style>
     </div>
