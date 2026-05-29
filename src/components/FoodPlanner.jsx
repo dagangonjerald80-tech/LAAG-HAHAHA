@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+// Added fetch for initial room data
 import { RotateCcw, AlertCircle, Sparkles } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
@@ -28,6 +29,30 @@ export default function FoodPlanner() {
     return DEFAULT_ITEMS;
   });
 
+  // ----- NEW: Fetch shared room data on component mount -----
+  useEffect(() => {
+    fetch(`${API_URL}/api/rooms/${ROOM_CODE}/`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          // If room does not exist, create it via POST later when items change
+          console.warn('Room not found, will be created on first save');
+          return null;
+        }
+        const data = await response.json();
+        // Expect the backend to return a field named `foods` (list of strings)
+        if (Array.isArray(data.foods) && data.foods.length) {
+          setItems(data.foods);
+          localStorage.setItem('laag_plan_simple_foods', JSON.stringify(data.foods));
+        }
+      })
+      .catch((error) => {
+        console.error('Error fetching room data:', error);
+      });
+  }, []);
+
   // Track the index of the input we want to focus
   const [focusIndex, setFocusIndex] = useState(null);
   const inputRefs = useRef([]);
@@ -37,6 +62,7 @@ export default function FoodPlanner() {
     // Save locally
     localStorage.setItem('laag_plan_simple_foods', JSON.stringify(items));
     // Sync to Django API (upsert based on ROOM_CODE)
+    // Upsert the current list to the shared room
     fetch(`${API_URL}/api/rooms/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
