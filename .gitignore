@@ -28,3 +28,15 @@ __pycache__/
 
 # Secrets
 .env.local
+
+# Databases
+*.sqlite3
+
+# Python Virtual Environments
+venv/
+.venv/
+env/
+
+# Backend configurations
+backend/.env
+
