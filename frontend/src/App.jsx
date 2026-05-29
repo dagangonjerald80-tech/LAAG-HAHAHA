@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'https://laag-backend.onrender.com';
 
 export default function App() {
   // Toggle visibility of the main card
@@ -11,8 +11,8 @@ export default function App() {
   const [tempNickname, setTempNickname] = useState('');
 
   // Room Sync States
-  const [roomCode, setRoomCode] = useState(() => localStorage.getItem('laag_room_code') || '');
-  const [tempRoomCode, setTempRoomCode] = useState(() => localStorage.getItem('laag_room_code') || '');
+  const [roomCode, setRoomCode] = useState(() => localStorage.getItem('laag_room_code') || 'laag-squad');
+  const [tempRoomCode, setTempRoomCode] = useState(() => localStorage.getItem('laag_room_code') || 'laag-squad');
   const [isSyncingLive, setIsSyncingLive] = useState(false);
 
   // Active users in the room
@@ -144,6 +144,7 @@ export default function App() {
             setMeetupArea(data.meetup_area);
             setMeetupTime(data.meetup_time);
             setActiveUsers(data.active_users || []);
+            setIsSyncingLive(true);
             
             const newFoodList = data.food_items || [];
             setItems(prevItems => {
@@ -161,6 +162,7 @@ export default function App() {
           })
           .catch(err => {
             console.warn('Polling status info:', err.message);
+            if (isMounted) setIsSyncingLive(false);
           });
       }
     }, 4000);
