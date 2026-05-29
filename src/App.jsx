@@ -6,10 +6,17 @@ export default function App() {
   // Toggle visibility of the main card
   const [showCard, setShowCard] = useState(false);
 
+  // Nickname (simple user identity – stored in localStorage)
+  const [nickname, setNickname] = useState(() => localStorage.getItem('laag_nickname') || '');
+  const [tempNickname, setTempNickname] = useState('');
+
   // Room Sync States
   const [roomCode, setRoomCode] = useState(() => localStorage.getItem('laag_room_code') || '');
   const [tempRoomCode, setTempRoomCode] = useState(() => localStorage.getItem('laag_room_code') || '');
   const [isSyncingLive, setIsSyncingLive] = useState(false);
+
+  // Active users in the room
+  const [activeUsers, setActiveUsers] = useState([]);
 
   // Laag Details States
   const [laagDate, setLaagDate] = useState(() => localStorage.getItem('laag_date') || 'Saturday');
@@ -56,6 +63,7 @@ export default function App() {
   useEffect(() => {
     if (!roomCode) {
       setIsSyncingLive(false);
+      setActiveUsers([]);
       // Re-load offline cache values when disconnecting
       setLaagDate(localStorage.getItem('laag_date') || 'Saturday');
       setParticipants(localStorage.getItem('laag_participants') || 'murag 5 persons haha');
@@ -83,6 +91,7 @@ export default function App() {
           setMeetupArea(data.meetup_area);
           setMeetupTime(data.meetup_time);
           setItems(data.food_items || []);
+          setActiveUsers(data.active_users || []);
           setIsSyncingLive(true);
         } else if (response.status === 404) {
           // Room not found, create new room entry with current on-screen states
@@ -134,6 +143,7 @@ export default function App() {
             setService(data.service);
             setMeetupArea(data.meetup_area);
             setMeetupTime(data.meetup_time);
+            setActiveUsers(data.active_users || []);
             
             const newFoodList = data.food_items || [];
             setItems(prevItems => {
@@ -161,6 +171,30 @@ export default function App() {
     };
   }, [roomCode]);
 
+  // HEARTBEAT: Send nickname + room_code every 10 seconds to keep user "active"
+  useEffect(() => {
+    if (!roomCode || !nickname) return;
+
+    const sendHeartbeat = () => {
+      fetch(`${API_URL}/api/rooms/heartbeat/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room_code: roomCode, nickname })
+      })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data) setActiveUsers(data.active_users || []);
+        })
+        .catch(err => console.warn('Heartbeat error:', err.message));
+    };
+
+    // Send immediately on connect
+    sendHeartbeat();
+    const heartbeatInterval = setInterval(sendHeartbeat, 10000);
+
+    return () => clearInterval(heartbeatInterval);
+  }, [roomCode, nickname]);
+
   // Push single update parameter to DB
   const syncToDB = async (fieldsToUpdate) => {
     if (!roomCode) return;
@@ -173,6 +207,21 @@ export default function App() {
     } catch (error) {
       console.error('Failed to sync changes to Django:', error);
     }
+  };
+
+  // Save nickname
+  const handleSetNickname = (e) => {
+    e.preventDefault();
+    const name = tempNickname.trim();
+    if (!name) return;
+    setNickname(name);
+    localStorage.setItem('laag_nickname', name);
+  };
+
+  const handleChangeNickname = () => {
+    setNickname('');
+    setTempNickname('');
+    localStorage.removeItem('laag_nickname');
   };
 
   const handleConnectRoom = (e) => {
@@ -256,6 +305,94 @@ export default function App() {
     }
   };
 
+  // ── NICKNAME PROMPT SCREEN ──
+  if (!nickname) {
+    return (
+      <div className="app-viewport">
+        <div className="landing-screen">
+          <div className="nickname-prompt animate-scale-up">
+            <h2 className="nickname-title">👋 Unsa imong nickname?</h2>
+            <p className="nickname-sub">Enter your name para makita ka sa ubang users sa room.</p>
+            <form onSubmit={handleSetNickname} className="nickname-form">
+              <input
+                type="text"
+                className="nickname-input"
+                placeholder="e.g. Jerald, Bossing, Kuya J..."
+                value={tempNickname}
+                onChange={(e) => setTempNickname(e.target.value)}
+                autoFocus
+                maxLength={30}
+              />
+              <button type="submit" className="nickname-btn">Let's Go! 🚀</button>
+            </form>
+          </div>
+        </div>
+
+        <style jsx="true">{`
+          .nickname-prompt {
+            background: rgba(18, 30, 26, 0.95);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            border-radius: 20px;
+            padding: 48px 40px;
+            max-width: 440px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(16,185,129,0.08);
+          }
+          .nickname-title {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: var(--text-white);
+          }
+          .nickname-sub {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 28px;
+          }
+          .nickname-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+          .nickname-input {
+            padding: 14px 18px;
+            border-radius: 12px;
+            border: 1px solid rgba(16,185,129,0.3);
+            background: rgba(0,0,0,0.3);
+            color: var(--text-white);
+            font-size: 18px;
+            text-align: center;
+            outline: none;
+            transition: all 0.3s;
+          }
+          .nickname-input:focus {
+            border-color: var(--text-emerald);
+            box-shadow: 0 0 20px rgba(16,185,129,0.15);
+          }
+          .nickname-input::placeholder {
+            color: var(--text-muted);
+            opacity: 0.6;
+          }
+          .nickname-btn {
+            padding: 14px 24px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+          }
+          .nickname-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(16,185,129,0.3);
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
     <div className="app-viewport">
       {!showCard ? (
@@ -275,6 +412,15 @@ export default function App() {
           <button className="back-btn" onClick={() => setShowCard(false)}>
             ← Back
           </button>
+
+          {/* User Identity Bar */}
+          <div className="user-identity-bar">
+            <span className="user-avatar">👤</span>
+            <span className="user-name">{nickname}</span>
+            <button className="change-nick-btn" onClick={handleChangeNickname}>
+              (Change Name)
+            </button>
+          </div>
 
           {/* Database Room Sync UI Panel */}
           <div className="room-sync-bar">
@@ -301,6 +447,21 @@ export default function App() {
               </form>
             )}
           </div>
+
+          {/* Active Users Panel */}
+          {roomCode && isSyncingLive && activeUsers.length > 0 && (
+            <div className="active-users-panel">
+              <span className="active-users-label">🟢 Online ({activeUsers.length}):</span>
+              <div className="active-users-list">
+                {activeUsers.map((u, i) => (
+                  <span key={i} className={`user-chip ${u.nickname.toLowerCase() === nickname.toLowerCase() ? 'user-chip-me' : ''}`}>
+                    {u.nickname}
+                    {u.nickname.toLowerCase() === nickname.toLowerCase() && <span className="me-tag"> (you)</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Heading Section */}
           <h1 className="system-title">Sinulom Falls & Bolao Cold Spring</h1>
@@ -434,6 +595,83 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Inline styles for user-related UI */}
+      <style jsx="true">{`
+        .user-identity-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 16px;
+          background: rgba(16, 185, 129, 0.08);
+          border: 1px solid rgba(16, 185, 129, 0.15);
+          border-radius: 12px;
+          margin-bottom: 12px;
+        }
+        .user-avatar {
+          font-size: 18px;
+        }
+        .user-name {
+          font-weight: 700;
+          color: var(--text-emerald);
+          font-size: 15px;
+        }
+        .change-nick-btn {
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-size: 12px;
+          cursor: pointer;
+          margin-left: auto;
+          transition: color 0.2s;
+        }
+        .change-nick-btn:hover {
+          color: var(--text-blue);
+        }
+
+        .active-users-panel {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 16px;
+          background: rgba(16, 185, 129, 0.05);
+          border: 1px solid rgba(16, 185, 129, 0.12);
+          border-radius: 12px;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+        }
+        .active-users-label {
+          font-size: 13px;
+          color: var(--text-emerald);
+          font-weight: 600;
+          white-space: nowrap;
+        }
+        .active-users-list {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .user-chip {
+          padding: 4px 12px;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 20px;
+          font-size: 13px;
+          color: var(--text-light);
+          font-weight: 500;
+          transition: all 0.2s;
+        }
+        .user-chip-me {
+          background: rgba(16, 185, 129, 0.15);
+          border-color: rgba(16, 185, 129, 0.3);
+          color: var(--text-emerald);
+        }
+        .me-tag {
+          font-size: 11px;
+          opacity: 0.7;
+        }
+      `}</style>
     </div>
   );
 }
+

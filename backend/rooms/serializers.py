@@ -13,6 +13,8 @@ class LaagRoomSerializer(serializers.ModelSerializer):
             'meetup_time',
             'food_items',
             'foods',
+            'active_users',
             'updated_at'
         ]
         read_only_fields = ['updated_at']
+

@@ -9,6 +9,7 @@ class LaagRoom(models.Model):
     meetup_time = models.CharField(max_length=255, default='8:00 AM – Meet up daw forsure 9 nasad ka abot haha', blank=True)
     food_items = models.JSONField(default=list, blank=True)
     foods = models.JSONField(default=list, blank=True) # Supporting simple food lists from other files
+    active_users = models.JSONField(default=list, blank=True)  # List of {"nickname": "...", "last_seen": "ISO timestamp"}
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -16,3 +17,4 @@ class LaagRoom(models.Model):
 
     def __str__(self):
         return f"{self.room_code} - Last updated: {self.updated_at}"
+
