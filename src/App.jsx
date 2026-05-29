@@ -1,17 +1,24 @@
 import React, { useState, useEffect } from 'react';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+
 export default function App() {
   // Toggle visibility of the main card
   const [showCard, setShowCard] = useState(false);
 
+  // Room Sync States
+  const [roomCode, setRoomCode] = useState(() => localStorage.getItem('laag_room_code') || '');
+  const [tempRoomCode, setTempRoomCode] = useState(() => localStorage.getItem('laag_room_code') || '');
+  const [isSyncingLive, setIsSyncingLive] = useState(false);
+
   // Laag Details States
-  const [laagDate, setLaagDate] = useState(() => localStorage.getItem('laag_date') || 'Sunday');
+  const [laagDate, setLaagDate] = useState(() => localStorage.getItem('laag_date') || 'Saturday');
   const [participants, setParticipants] = useState(() => localStorage.getItem('laag_participants') || 'murag 5 persons haha');
   const [service, setService] = useState(() => localStorage.getItem('laag_service') || '3 motors');
   const [meetupArea, setMeetupArea] = useState(() => localStorage.getItem('laag_meetup_area') || 'TBA HAHA');
   const [meetupTime, setMeetupTime] = useState(() => localStorage.getItem('laag_meetup_time') || '8:00 AM – Meet up daw forsure 9 nasad ka abot haha');
 
-  // Food Items List (with IDs for mount animations)
+  // Food Items List
   const [items, setItems] = useState(() => {
     const saved = localStorage.getItem('laag_foods_crud_v2');
     return saved ? JSON.parse(saved) : [
@@ -26,44 +33,192 @@ export default function App() {
   const [inputVal, setInputVal] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editingVal, setEditingVal] = useState('');
-  const [addedItemId, setAddedItemId] = useState(null); // Track recently added item for highlight animation
+  const [addedItemId, setAddedItemId] = useState(null);
 
-  // Sync details to local storage
+  // Local sync to fallback storage on changes
   useEffect(() => {
-    localStorage.setItem('laag_date', laagDate);
-    localStorage.setItem('laag_participants', participants);
-    localStorage.setItem('laag_service', service);
-    localStorage.setItem('laag_meetup_area', meetupArea);
-    localStorage.setItem('laag_meetup_time', meetupTime);
-  }, [laagDate, participants, service, meetupArea, meetupTime]);
+    if (!roomCode) {
+      localStorage.setItem('laag_date', laagDate);
+      localStorage.setItem('laag_participants', participants);
+      localStorage.setItem('laag_service', service);
+      localStorage.setItem('laag_meetup_area', meetupArea);
+      localStorage.setItem('laag_meetup_time', meetupTime);
+    }
+  }, [laagDate, participants, service, meetupArea, meetupTime, roomCode]);
 
-  // Sync food list to local storage
   useEffect(() => {
-    localStorage.setItem('laag_foods_crud_v2', JSON.stringify(items));
-  }, [items]);
+    if (!roomCode) {
+      localStorage.setItem('laag_foods_crud_v2', JSON.stringify(items));
+    }
+  }, [items, roomCode]);
 
-  // Create
+  // DATABASE SYNC MANAGER
+  useEffect(() => {
+    if (!roomCode) {
+      setIsSyncingLive(false);
+      // Re-load offline cache values when disconnecting
+      setLaagDate(localStorage.getItem('laag_date') || 'Saturday');
+      setParticipants(localStorage.getItem('laag_participants') || 'murag 5 persons haha');
+      setService(localStorage.getItem('laag_service') || '3 motors');
+      setMeetupArea(localStorage.getItem('laag_meetup_area') || 'TBA HAHA');
+      setMeetupTime(localStorage.getItem('laag_meetup_time') || '8:00 AM – Meet up daw forsure 9 nasad ka abot haha');
+      const savedFoods = localStorage.getItem('laag_foods_crud_v2');
+      if (savedFoods) setItems(JSON.parse(savedFoods));
+      return;
+    }
+
+    let isMounted = true;
+
+    // Fetch initial database room details
+    const initRoomSync = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/rooms/${roomCode}/`);
+        if (!isMounted) return;
+
+        if (response.status === 200) {
+          const data = await response.json();
+          setLaagDate(data.laag_date);
+          setParticipants(data.participants);
+          setService(data.service);
+          setMeetupArea(data.meetup_area);
+          setMeetupTime(data.meetup_time);
+          setItems(data.food_items || []);
+          setIsSyncingLive(true);
+        } else if (response.status === 404) {
+          // Room not found, create new room entry with current on-screen states
+          const createResponse = await fetch(`${API_URL}/api/rooms/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              room_code: roomCode,
+              laag_date: laagDate,
+              participants: participants,
+              service: service,
+              meetup_area: meetupArea,
+              meetup_time: meetupTime,
+              food_items: items
+            })
+          });
+          
+          if (!isMounted) return;
+          if (createResponse.ok) {
+            setIsSyncingLive(true);
+          } else {
+            console.error('Failed to create new room in Django backend');
+            setIsSyncingLive(false);
+          }
+        } else {
+          console.error('Failed to connect to room in Django backend');
+          setIsSyncingLive(false);
+        }
+      } catch (error) {
+        console.error('Failed to connect to Django backend:', error);
+        if (isMounted) setIsSyncingLive(false);
+      }
+    };
+
+    initRoomSync();
+
+    // Polling for live updates from other users
+    const pollInterval = setInterval(() => {
+      if (isMounted) {
+        fetch(`${API_URL}/api/rooms/${roomCode}/`)
+          .then(res => {
+            if (res.status === 200) return res.json();
+            throw new Error('Room not found or server error');
+          })
+          .then(data => {
+            if (!isMounted) return;
+            setLaagDate(data.laag_date);
+            setParticipants(data.participants);
+            setService(data.service);
+            setMeetupArea(data.meetup_area);
+            setMeetupTime(data.meetup_time);
+            
+            const newFoodList = data.food_items || [];
+            setItems(prevItems => {
+              if (JSON.stringify(prevItems) !== JSON.stringify(newFoodList)) {
+                const prevIds = prevItems.map(i => i.id);
+                const addedItem = newFoodList.find(i => !prevIds.includes(i.id));
+                if (addedItem) {
+                   setAddedItemId(addedItem.id);
+                   setTimeout(() => setAddedItemId(null), 1000);
+                }
+                return newFoodList;
+              }
+              return prevItems;
+            });
+          })
+          .catch(err => {
+            console.warn('Polling status info:', err.message);
+          });
+      }
+    }, 4000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+    };
+  }, [roomCode]);
+
+  // Push single update parameter to DB
+  const syncToDB = async (fieldsToUpdate) => {
+    if (!roomCode) return;
+    try {
+      await fetch(`${API_URL}/api/rooms/${roomCode}/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fieldsToUpdate)
+      });
+    } catch (error) {
+      console.error('Failed to sync changes to Django:', error);
+    }
+  };
+
+  const handleConnectRoom = (e) => {
+    e.preventDefault();
+    const code = tempRoomCode.trim();
+    if (!code) return;
+    setRoomCode(code);
+    localStorage.setItem('laag_room_code', code);
+  };
+
+  const handleDisconnectRoom = () => {
+    setRoomCode('');
+    setTempRoomCode('');
+    localStorage.removeItem('laag_room_code');
+  };
+
+  // Create Item
   const handleAdd = (e) => {
     e.preventDefault();
     if (!inputVal.trim()) return;
     const newId = `food_${Date.now()}`;
     const newItem = { id: newId, text: inputVal.trim() };
+    const updatedItems = [...items, newItem];
     
-    setItems([...items, newItem]);
-    setAddedItemId(newId); // Flag this ID as newly added
+    setItems(updatedItems);
+    setAddedItemId(newId);
     setInputVal('');
 
-    // Clear the highlight flag after animation finishes
+    if (roomCode) {
+      syncToDB({ food_items: updatedItems });
+    }
+
     setTimeout(() => {
       setAddedItemId(null);
     }, 1000);
   };
 
-  // Delete
+  // Delete Item
   const handleDelete = (id) => {
     const confirmDelete = window.confirm('Delete this item?');
     if (confirmDelete) {
-      setItems(items.filter(item => item.id !== id));
+      const updatedItems = items.filter(item => item.id !== id);
+      setItems(updatedItems);
+      if (roomCode) {
+        syncToDB({ food_items: updatedItems });
+      }
       if (editingId === id) {
         setEditingId(null);
       }
@@ -80,8 +235,25 @@ export default function App() {
   const handleSaveEdit = (e, id) => {
     e.preventDefault();
     if (!editingVal.trim()) return;
-    setItems(items.map(item => item.id === id ? { ...item, text: editingVal.trim() } : item));
+    const updatedItems = items.map(item => item.id === id ? { ...item, text: editingVal.trim() } : item);
+    setItems(updatedItems);
+    if (roomCode) {
+      syncToDB({ food_items: updatedItems });
+    }
     setEditingId(null);
+  };
+
+  // Inline details sync triggers
+  const handleDetailChange = (field, val, dbField) => {
+    if (field === 'date') setLaagDate(val);
+    if (field === 'participants') setParticipants(val);
+    if (field === 'service') setService(val);
+    if (field === 'area') setMeetupArea(val);
+    if (field === 'time') setMeetupTime(val);
+
+    if (roomCode) {
+      syncToDB({ [dbField]: val });
+    }
   };
 
   return (
@@ -104,6 +276,32 @@ export default function App() {
             ← Back
           </button>
 
+          {/* Database Room Sync UI Panel */}
+          <div className="room-sync-bar">
+            {roomCode ? (
+              <div className="room-active-status">
+                <span className={`status-dot ${isSyncingLive ? 'live' : 'local'}`}></span>
+                <span className="room-info-txt">
+                  {isSyncingLive ? `Live Room: ${roomCode}` : 'Connecting...'}
+                </span>
+                <button className="room-action-link" onClick={handleDisconnectRoom}>
+                  (Disconnect)
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleConnectRoom} className="room-connect-form">
+                <input 
+                  type="text" 
+                  className="room-code-input" 
+                  placeholder="Enter Squad Room Code (e.g. CDO-Squad)" 
+                  value={tempRoomCode} 
+                  onChange={(e) => setTempRoomCode(e.target.value)}
+                />
+                <button type="submit" className="room-connect-btn">Connect Live</button>
+              </form>
+            )}
+          </div>
+
           {/* Heading Section */}
           <h1 className="system-title">Sinulom Falls & Bolao Cold Spring</h1>
           
@@ -125,7 +323,7 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={laagDate} 
-                  onChange={(e) => setLaagDate(e.target.value)}
+                  onChange={(e) => handleDetailChange('date', e.target.value, 'laag_date')}
                 />
               </div>
 
@@ -136,7 +334,7 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={participants} 
-                  onChange={(e) => setParticipants(e.target.value)}
+                  onChange={(e) => handleDetailChange('participants', e.target.value, 'participants')}
                 />
               </div>
 
@@ -147,7 +345,7 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={service} 
-                  onChange={(e) => setService(e.target.value)}
+                  onChange={(e) => handleDetailChange('service', e.target.value, 'service')}
                 />
               </div>
 
@@ -158,7 +356,7 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={meetupArea} 
-                  onChange={(e) => setMeetupArea(e.target.value)}
+                  onChange={(e) => handleDetailChange('area', e.target.value, 'meetup_area')}
                 />
               </div>
 
@@ -169,7 +367,7 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={meetupTime} 
-                  onChange={(e) => setMeetupTime(e.target.value)}
+                  onChange={(e) => handleDetailChange('time', e.target.value, 'meetup_time')}
                 />
               </div>
             </div>

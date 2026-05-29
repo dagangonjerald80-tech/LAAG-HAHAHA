@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { RotateCcw, AlertCircle, Sparkles } from 'lucide-react';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+
 const DEFAULT_ITEMS = [
   'Liempo (Pork Belly) for Sinugba',
   'Puso (Hanging Rice)',
@@ -12,6 +14,7 @@ const DEFAULT_ITEMS = [
 ];
 
 export default function FoodPlanner() {
+  const ROOM_CODE = 'default'; // you can change this to a dynamic room identifier
   // Load list from local storage or use defaults
   const [items, setItems] = useState(() => {
     const saved = localStorage.getItem('laag_plan_simple_foods');
@@ -31,7 +34,23 @@ export default function FoodPlanner() {
 
   // Sync to local storage
   useEffect(() => {
+    // Save locally
     localStorage.setItem('laag_plan_simple_foods', JSON.stringify(items));
+    // Sync to Django API (upsert based on ROOM_CODE)
+    fetch(`${API_URL}/api/rooms/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ room_code: ROOM_CODE, foods: items })
+    })
+    .then(async (response) => {
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Django sync error:', errorText);
+      }
+    })
+    .catch((error) => {
+      console.error('Django sync connection error:', error);
+    });
   }, [items]);
 
   // Handle focusing when focusIndex changes
