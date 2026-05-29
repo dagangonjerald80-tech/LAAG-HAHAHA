@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 // Added fetch for initial room data
 import { RotateCcw, AlertCircle, Sparkles } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://laag-backend.onrender.com';
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_URL = isLocal 
+  ? 'http://127.0.0.1:8000' 
+  : (import.meta.env.VITE_API_URL || 'https://laag-backend.onrender.com');
 
 const DEFAULT_ITEMS = [
   'Liempo (Pork Belly) for Sinugba',
@@ -15,7 +18,8 @@ const DEFAULT_ITEMS = [
 ];
 
 export default function FoodPlanner() {
-  const ROOM_CODE = 'default'; // you can change this to a dynamic room identifier
+  const queryParams = new URLSearchParams(window.location.search);
+  const ROOM_CODE = queryParams.get('room') || localStorage.getItem('laag_room_code') || 'laag-squad';
   // Load list from local storage or use defaults
   const [items, setItems] = useState(() => {
     const saved = localStorage.getItem('laag_plan_simple_foods');
@@ -57,16 +61,13 @@ export default function FoodPlanner() {
   const [focusIndex, setFocusIndex] = useState(null);
   const inputRefs = useRef([]);
 
-  // Sync to local storage
-  useEffect(() => {
-    // Save locally
-    localStorage.setItem('laag_plan_simple_foods', JSON.stringify(items));
-    // Sync to Django API (upsert based on ROOM_CODE)
-    // Upsert the current list to the shared room
+  // Sync to local storage & Django API
+  const syncRoomFoods = (currentItems) => {
+    localStorage.setItem('laag_plan_simple_foods', JSON.stringify(currentItems));
     fetch(`${API_URL}/api/rooms/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room_code: ROOM_CODE, foods: items })
+      body: JSON.stringify({ room_code: ROOM_CODE, foods: currentItems })
     })
     .then(async (response) => {
       if (!response.ok) {
@@ -77,7 +78,7 @@ export default function FoodPlanner() {
     .catch((error) => {
       console.error('Django sync connection error:', error);
     });
-  }, [items]);
+  };
 
   // Handle focusing when focusIndex changes
   useEffect(() => {
@@ -91,6 +92,7 @@ export default function FoodPlanner() {
     const newItems = [...items];
     newItems[index] = value;
     setItems(newItems);
+    localStorage.setItem('laag_plan_simple_foods', JSON.stringify(newItems));
   };
 
   const handleKeyDown = (index, e) => {
@@ -101,6 +103,7 @@ export default function FoodPlanner() {
       newItems.splice(index + 1, 0, '');
       setItems(newItems);
       setFocusIndex(index + 1);
+      syncRoomFoods(newItems);
     } else if (e.key === 'Backspace' && items[index] === '') {
       // Remove line if empty and backspace is pressed
       if (items.length > 1) {
@@ -109,6 +112,7 @@ export default function FoodPlanner() {
         newItems.splice(index, 1);
         setItems(newItems);
         setFocusIndex(index > 0 ? index - 1 : 0);
+        syncRoomFoods(newItems);
       }
     } else if (e.key === 'ArrowUp' && index > 0) {
       e.preventDefault();
@@ -123,13 +127,16 @@ export default function FoodPlanner() {
     if (window.confirm('Reset to default CDO picnic foods?')) {
       setItems(DEFAULT_ITEMS);
       setFocusIndex(0);
+      syncRoomFoods(DEFAULT_ITEMS);
     }
   };
 
   const handleClear = () => {
     if (window.confirm('Clear all items?')) {
-      setItems(['']);
+      const cleared = [''];
+      setItems(cleared);
       setFocusIndex(0);
+      syncRoomFoods(cleared);
     }
   };
 
@@ -160,6 +167,7 @@ export default function FoodPlanner() {
                   value={item}
                   onChange={(e) => handleChange(index, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(index, e)}
+                  onBlur={() => syncRoomFoods(items)}
                   placeholder="Type food or supply here..."
                 />
               </div>

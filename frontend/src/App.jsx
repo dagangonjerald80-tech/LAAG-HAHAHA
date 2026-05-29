@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://laag-backend.onrender.com';
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_URL = isLocal 
+  ? 'http://127.0.0.1:8000' 
+  : (import.meta.env.VITE_API_URL || 'https://laag-backend.onrender.com');
 
 export default function App() {
   // Toggle visibility of the main card
@@ -14,6 +17,7 @@ export default function App() {
   const [roomCode, setRoomCode] = useState(() => localStorage.getItem('laag_room_code') || 'laag-squad');
   const [tempRoomCode, setTempRoomCode] = useState(() => localStorage.getItem('laag_room_code') || 'laag-squad');
   const [isSyncingLive, setIsSyncingLive] = useState(false);
+  const [focusedField, setFocusedField] = useState(null);
 
   // Active users in the room
   const [activeUsers, setActiveUsers] = useState([]);
@@ -138,11 +142,11 @@ export default function App() {
           })
           .then(data => {
             if (!isMounted) return;
-            setLaagDate(data.laag_date);
-            setParticipants(data.participants);
-            setService(data.service);
-            setMeetupArea(data.meetup_area);
-            setMeetupTime(data.meetup_time);
+            if (focusedField !== 'date') setLaagDate(data.laag_date);
+            if (focusedField !== 'participants') setParticipants(data.participants);
+            if (focusedField !== 'service') setService(data.service);
+            if (focusedField !== 'area') setMeetupArea(data.meetup_area);
+            if (focusedField !== 'time') setMeetupTime(data.meetup_time);
             setActiveUsers(data.active_users || []);
             setIsSyncingLive(true);
             
@@ -154,7 +158,7 @@ export default function App() {
                 if (addedItem) {
                    setAddedItemId(addedItem.id);
                    setTimeout(() => setAddedItemId(null), 1000);
-                }
+                 }
                 return newFoodList;
               }
               return prevItems;
@@ -298,17 +302,13 @@ export default function App() {
     setEditingId(null);
   };
 
-  // Inline details sync triggers
-  const handleDetailChange = (field, val, dbField) => {
+  // Inline details state triggers (will sync to DB onBlur/Enter)
+  const handleDetailChange = (field, val) => {
     if (field === 'date') setLaagDate(val);
     if (field === 'participants') setParticipants(val);
     if (field === 'service') setService(val);
     if (field === 'area') setMeetupArea(val);
     if (field === 'time') setMeetupTime(val);
-
-    if (roomCode) {
-      syncToDB({ [dbField]: val });
-    }
   };
 
   // ── NICKNAME PROMPT SCREEN ──
@@ -490,7 +490,15 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={laagDate} 
-                  onChange={(e) => handleDetailChange('date', e.target.value, 'laag_date')}
+                  onChange={(e) => handleDetailChange('date', e.target.value)}
+                  onFocus={() => setFocusedField('date')}
+                  onBlur={() => {
+                    setFocusedField(null);
+                    if (roomCode) syncToDB({ laag_date: laagDate });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.target.blur();
+                  }}
                 />
               </div>
 
@@ -501,7 +509,15 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={participants} 
-                  onChange={(e) => handleDetailChange('participants', e.target.value, 'participants')}
+                  onChange={(e) => handleDetailChange('participants', e.target.value)}
+                  onFocus={() => setFocusedField('participants')}
+                  onBlur={() => {
+                    setFocusedField(null);
+                    if (roomCode) syncToDB({ participants: participants });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.target.blur();
+                  }}
                 />
               </div>
 
@@ -512,7 +528,15 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={service} 
-                  onChange={(e) => handleDetailChange('service', e.target.value, 'service')}
+                  onChange={(e) => handleDetailChange('service', e.target.value)}
+                  onFocus={() => setFocusedField('service')}
+                  onBlur={() => {
+                    setFocusedField(null);
+                    if (roomCode) syncToDB({ service: service });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.target.blur();
+                  }}
                 />
               </div>
 
@@ -523,7 +547,15 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={meetupArea} 
-                  onChange={(e) => handleDetailChange('area', e.target.value, 'meetup_area')}
+                  onChange={(e) => handleDetailChange('area', e.target.value)}
+                  onFocus={() => setFocusedField('area')}
+                  onBlur={() => {
+                    setFocusedField(null);
+                    if (roomCode) syncToDB({ meetup_area: meetupArea });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.target.blur();
+                  }}
                 />
               </div>
 
@@ -534,7 +566,15 @@ export default function App() {
                   type="text" 
                   className="details-input" 
                   value={meetupTime} 
-                  onChange={(e) => handleDetailChange('time', e.target.value, 'meetup_time')}
+                  onChange={(e) => handleDetailChange('time', e.target.value)}
+                  onFocus={() => setFocusedField('time')}
+                  onBlur={() => {
+                    setFocusedField(null);
+                    if (roomCode) syncToDB({ meetup_time: meetupTime });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.target.blur();
+                  }}
                 />
               </div>
             </div>
